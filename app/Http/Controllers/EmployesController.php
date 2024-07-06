@@ -36,8 +36,6 @@ class EmployesController extends Controller
         }
 
         return response()->json($data);
-        //di edit sesuai keinginan
-        // return EmployesResource::collection($employes);
     }
 
 
@@ -60,9 +58,7 @@ class EmployesController extends Controller
             'photo' => $photo
         ];
 
-
         return response()->json($data);
-        // return new EmployesDetailResource($employes);
     }
 
 
@@ -70,11 +66,17 @@ class EmployesController extends Controller
     {
         $request->validate([
             'name' => 'required|max:50',
-            'phone' => 'required|max:13',
+            'email' => 'email',
+            'phone' => 'required',
             'address' => 'required',
             'gender' => 'required',
-            // 'photo' => 'image|mimes:jpg,png,jpeg,gif,svg',
         ]);
+
+        if($request->file('photo')){
+            $request->validate([
+                'photo' => 'image|mimes:jpg,png,webp,jpeg,svg'
+            ]);
+        }
 
         $photo = null;
         if ($request->file('photo')) {
@@ -167,3 +169,8 @@ class EmployesController extends Controller
     }
 
 }
+
+// [
+//     'email.unique' => 'email sudah terdaftar',
+//     'phone.unique' => 'nomer hp sudah terdaftar',
+// ]

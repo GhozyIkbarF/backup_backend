@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 use App\Models\Admin;
-
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -18,18 +18,20 @@ class AuthenticationController extends Controller
             'password'=> 'required',
         ]);
 
-        $admin = Admin::where('email', $request->email)->first();
+        $user = User::where('email', $request->email)->first();
 
-        if (! $admin || ! Hash::check($request->password, $admin->password)) {
+        if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        $token = $admin->createToken($admin->email)->plainTextToken;
+        $token = $user->createToken($user->email)->plainTextToken;
         return response()->json([
             'accessToken' => $token,
-            'id' => $admin->id
+            'id' => $user->id,
+            'name' => $user->name,
+            'role' => $user->role,
         ], 200);
     }
 

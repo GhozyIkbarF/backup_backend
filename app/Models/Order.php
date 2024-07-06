@@ -21,10 +21,13 @@ class Order extends Model
         'quantity',
         'pricePerItem',
         'size',
-        'pembayaran',
+        'payment',
         'deadline',
         'progres',
+        'endDate',
+        'shippingCost',
         'status',
+        'company_id',
     ];
 
     public function designs()
@@ -38,6 +41,10 @@ class Order extends Model
     }
     public function buktiBayars()
     {
-        return $this->hasMany(buktiBayar::class);
+        return $this->hasMany(BuktiBayar::class);
+    }
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
     }
 }

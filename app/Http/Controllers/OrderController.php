@@ -7,31 +7,30 @@ use App\Models\Order as ModelsOrder;
 use App\Models\Design;
 use App\Models\ModelOrder;
 use App\Models\BuktiBayar;
+use App\Models\Company;
 use Illuminate\Support\Facades\Storage;
 use Twilio\Rest\Client;
 use Carbon\Carbon;
+use DateTime;
+use Illuminate\Support\Facades\Lang;
+use DateTimeZone;
 
 
 class OrderController extends Controller
 {
     public function showAllOrderMasuk()
     {
-        $orders = ModelsOrder::with(['designs'])
+        $orders = ModelsOrder::with(['designs:id,order_id,design'])
             ->where('status', 'masuk')
-            ->select('id', 'name', 'phone', 'email', 'description')
+            ->select('id', 'name', 'phone', 'email', 'description')->orderBy('created_at', 'DESC')
             ->get();
 
         // loop through each order
         foreach ($orders as $order) {
-            
+
             // loop through each design and set the URL
             foreach ($order->designs as $design) {
                 $design->design = asset('storage/' . $design->design);
-            }
-
-            // loop through each model and set the URL
-            foreach ($order->modelOrders as $model) {
-                $model->model = asset('storage/' . $model->model);
             }
         }
 
@@ -42,22 +41,16 @@ class OrderController extends Controller
     {
         $orders = ModelsOrder::with(['designs:id,order_id,design'])
             ->where('status', 'proses')
-            ->select('id', 'name', 'phone', 'email', 'deadline', 'progres')
+            ->select('id', 'name', 'phone', 'email', 'deadline', 'quantity', 'progres')->orderBy('created_at', 'DESC')
             ->get();
 
         // loop through each order
         foreach ($orders as $order) {
-
-            $order->deadline = Carbon::parse($order->deadline)->format('d/m/Y');
-
-            // loop through each design and set the URL
+            if($order->deadline !== null) {
+                $order->deadline = Carbon::parse($order->deadline)->format('d/m/Y');
+            }
             foreach ($order->designs as $design) {
                 $design->design = asset('storage/' . $design->design);
-            }
-
-            // loop through each model and set the URL
-            foreach ($order->modelOrders as $model) {
-                $model->model = asset('storage/' . $model->model);
             }
         }
 
@@ -68,17 +61,18 @@ class OrderController extends Controller
     {
         $orders = ModelsOrder::with(['designs:id,order_id,design'])
             ->where('status', 'selesai')
-            ->select('id', 'name', 'phone', 'email', 'description')
+            ->select('id', 'name', 'phone','description', 'endDate')->orderBy('endDate', 'DESC')
             ->get();
 
         // loop through each order
         foreach ($orders as $order) {
+            if($order->endDate !== null) {
 
-            // loop through each design and set the URL
+                $order->endDate = Carbon::parse($order->endDate)->format('d/m/Y');
+            }
             foreach ($order->designs as $design) {
                 $design->design = asset('storage/' . $design->design);
             }
-        
         }
 
         return response()->json($orders);
@@ -86,8 +80,7 @@ class OrderController extends Controller
 
     public function show($id)
     {
-        $order = ModelsOrder::with(['designs', 'modelOrders', 'buktiBayars'])->findOrFail($id);
-
+        $order = ModelsOrder::with(['designs', 'modelOrders', 'buktiBayars', 'company.bank_accounts'])->findOrFail($id);
 
         // loop through each design and set the URL
         foreach ($order->designs as $design) {
@@ -112,36 +105,145 @@ class OrderController extends Controller
     {
         $pendingCount = ModelsOrder::where('status', 'masuk')->count();
         $prosesCount = ModelsOrder::where('status', 'proses')->count();
-        $finishCount = ModelsOrder::where('status', 'finish')->count();
-        $currentMonth = date('Y-m');
-        $deadlineCount = ModelsOrder::where('deadline', 'like', $currentMonth . '%');
+        $finishCount = ModelsOrder::where('status', 'selesai')->count();
+        $pendapatanTotal = ModelsOrder::where('status', 'selesai')->sum('payment');
+        // $employeesCount = ModelsEmployes::get()->count();
 
+        $ordersByMonth = [];
+
+        // loop through each month of the year
+        for ($month = 1; $month <= 12; $month++) {
+            // get the year and month string in yyyy-mm format
+            $yearMonth = date('Y-m', mktime(0, 0, 0, $month, 1));
+
+            // filter the orders by the year and month
+            $orders = ModelsOrder::whereYear('endDate', substr($yearMonth, 0, 4))
+                ->whereMonth('endDate', substr($yearMonth, 5, 2))
+                ->where('status', 'selesai')
+                ->get();
+
+            // calculate the total amount of the filtered orders
+            $totalAmount = $orders->count();
+
+            $monthName = DateTime::createFromFormat('!m', $month)->format('F');
+
+            // add the total amount to the result array
+            $ordersByMonth[] = [
+                'label' => $monthName,
+                'total_amount' => $totalAmount,
+            ];
+        }
 
         return [
             'masuk' => $pendingCount,
             'proses' => $prosesCount,
-            'finish' => $finishCount,
-            'deadline' => $deadlineCount,
+            'selesai' => $finishCount,
+            'orderByMonth' => $ordersByMonth,
+            'pendapatanTotal' => $pendapatanTotal,
         ];
     }
 
-    public function getOrderPerMonth(Request $request)
+    public function getNumbersOrderPerYear($param)
     {
-        $date = ModelsOrder::whereYear('deadline', substr($request->date, 0, 4))
-        ->whereMonth('deadline', substr($request->date, 5))
-        ->get();
+        $ordersByMonth = [];
 
+        for ($month = 1; $month <= 12; $month++) {
+            // get the year and month string in yyyy-mm format
+            $yearMonth = date('Y-m', mktime(0, 0, 0, $month, 1));
 
-        return response()->json($date);
+            // filter the orders by the year and month
+            $orders = ModelsOrder::whereYear('endDate', $param)
+                ->whereMonth('endDate', substr($yearMonth, 5, 2))
+                ->where('status', 'selesai')
+                ->get();
+
+            // calculate the total amount of the filtered orders
+            $totalAmount = $orders->count();
+
+            // get the name of the month
+            $monthName = DateTime::createFromFormat('!m', $month)->format('F');
+            
+
+            // add the total amount and month name to the result array
+            $ordersByMonth[] = [
+                'label' => $monthName,
+                'total_amount' => $totalAmount,
+            ];
+        }
+
+        return [
+            'orderByMonth' => $ordersByMonth,
+            'year' => substr($yearMonth, 0, 4),
+        ];
     }
 
+    public function getOrdersPerDay(Request $request)
+    {
+        $request->validate([
+            'startDate' => 'required',
+            'endDate' => 'required',
+        ]);
+
+        $ordersPerDay = ModelsOrder::selectRaw('DATE(endDate) AS label, COUNT(*) AS total_amount')
+            ->whereBetween('endDate', [$request->startDate, $request->endDate])
+            ->where('status', 'selesai')
+            ->groupBy('label')->orderBy('label', 'asc')
+            ->get();
+
+            foreach ($ordersPerDay as $order) {
+                $order->label = Carbon::createFromFormat('Y-m-d', $order->label)->format('d-m-Y');
+            }
+
+        return $ordersPerDay;
+    }
+
+    // report order permonth
+    public function getOrderPerMonth(Request $request)
+    {
+        $date = $request->date;
+        $orderPerMonth = ModelsOrder::whereYear('endDate', substr($date, 0, 4))
+            ->whereMonth('endDate', substr($date, 5))
+            ->where('status', 'selesai')
+            ->select('name', 'phone', 'endDate', 'quantity', 'pricePerItem', 'payment', 'description')
+            ->get();
+            
+            $company = Company::findOrFail(1);
+
+            return response()->json([
+                'orderPerMonth' => $orderPerMonth,
+                'company' => $company
+            ]);
+    }
+
+    public function getOrderReportPerDay($startDate, $endDate)
+    {
+        $ordersPerDay = ModelsOrder::whereBetween('endDate', [$startDate, $endDate])
+            ->where('status', 'selesai')
+            ->select('name', 'phone', 'endDate', 'quantity', 'pricePerItem', 'payment', 'description')
+            ->orderBy('endDate', 'asc')
+            ->get();
+
+        $pendapatan = $ordersPerDay->sum('payment');
+
+            foreach ($ordersPerDay as $order) {
+                $order->endDate = Carbon::createFromFormat('Y-m-d', $order->endDate)->format('d-m-Y');
+            }
+
+        return $ordersPerDay;
+        // return [
+        //     'masuk' => $pendingCount,
+        //     'proses' => $prosesCount,
+        //     'selesai' => $finishCount,
+        //     'orderByMonth' => $ordersByMonth,
+        // ];
+    }
 
     public function store(Request $request)
     {
         $request->validate([
             'id' => 'required',
             'name' => 'required',
-            'phone' => 'required',
+            'phone' => 'required|numeric|min:11',
             'address' => 'required',
             'pembayaran' => 'numeric'
         ]);
@@ -162,7 +264,8 @@ class OrderController extends Controller
     {
         $request->validate([
             'name' => 'required|max:50',
-            'phone' => 'required|numeric|min:11',
+            'email' => 'email',
+            'phone' => 'required',
             'address' => 'required',
         ]);
 
@@ -178,7 +281,7 @@ class OrderController extends Controller
             'message' => 'Order updated successfully',
         ], 200);
     }
-    
+
     public function updateProgres(Request $request, $id)
     {
         $request->validate([
@@ -194,11 +297,30 @@ class OrderController extends Controller
         $order->update($request->all());
 
         return response()->json([
-            'message' => 'Uppdate progres order successfully',
+            'message' => 'Update progres order successfully',
         ], 200);
     }
 
-    
+    public function updateShippingCost(Request $request, $id)
+    {
+        $request->validate([
+            'shippingCost' => 'required',
+        ]);
+
+        $order = ModelsOrder::find($id);
+
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        $order->update($request->all());
+
+        return response()->json([
+            'message' => 'Update shipping cost successfully',
+        ], 200);
+    }
+
+
 
     public function destroy($id)
     {
@@ -223,42 +345,5 @@ class OrderController extends Controller
         } else {
             return response()->json(['message' => 'Product not found'], 404);
         }
-    }
-
-
-    public function sendMessage(Request $request)
-    {
-
-        $request->validate([
-            'accountId' => 'required',
-            'auth_token' => 'required',
-            'whatsapp_number' => 'required',
-            'customer_phone' => 'required',
-
-            // 'photo' => 'image|mimes:jpg,png,jpeg,gif,svg',
-        ]);
-        $account_sid = $request->accoutId;
-        $auth_token = $request->auth_token;
-        $twilio_whatsapp_number = 'whatsapp:' . $request->whatsapp_number;
-        $customer_phone = $request->customer_phone;
-
-        $client = new Client($account_sid, $auth_token);
-
-        $message = $client->messages->create(
-            'whatsapp:' . $customer_phone, // recipient phone number
-            [
-                'from' => $twilio_whatsapp_number,
-                'body' => 'Hello from Twilio!'
-            ]
-        );
-
-        if (!$message) {
-            return response()->json(['message' => 'Send message is fault'], 404);
-        }
-
-        return response()->json([
-            'message' => 'Send Message successfully',
-            'data' => $request
-        ], 200);
     }
 }
